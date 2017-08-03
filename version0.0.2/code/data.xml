@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<opencv_storage>
+<aspPersonNumThreshold>40</aspPersonNumThreshold>
+<kinectPersonNumThreshold>100</kinectPersonNumThreshold>
+<inThresholdReference>2.0000000000000001e-001</inThresholdReference>
+<outThresholdReference>4.0000000000000002e-001</outThresholdReference>
+<welcomeStr>"1\1"</welcomeStr>
+<seeYouStr>"2\2"</seeYouStr>
+<clientID>1.</clientID>
+<RectWidth>1024.</RectWidth>
+<RectHeight>768.</RectHeight>
+</opencv_storage>
