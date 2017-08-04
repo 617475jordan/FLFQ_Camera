@@ -35,6 +35,7 @@ int playInitial;      //播放标记
 int personNum;              //当前出现在视频中的频率
 int aspPersonNumThreshold ;//出现帧数的阈值
 int kinectPersonNumThreshold ;
+int clientID, RectWidth, RectHeight;
 
 double inThresholdReference ; //在规定帧数内，出现的占比
 double outThresholdReference;//在规定帧数内，消失的占比
@@ -88,7 +89,7 @@ void initial()
 	m_src.release();
 	initialDevice initialDevice;
 	initialDeviceflag = initialDevice.initialResult();
-	//initialDeviceflag = 1;
+	initialDeviceflag = 1;
 	seeYouFlag = 0;
 	m_num = 0;
 	failNum = 0;
@@ -140,7 +141,7 @@ void deepkinectCapture()
 					src = drawImage(src, rectView.someBodyNum(),
 						rectView.noBodyNum(), kinectPersonNumThreshold*inThresholdReference, kinectPersonNumThreshold*outThresholdReference);
 					imshow(windowName, src);
-					waitKey(1);
+					waitKey(50);
 
 					transferToPC();
 				}
@@ -363,23 +364,24 @@ void playMedia(string str, int flag)
 {
 	deleteData deleteData;
 	g_PM_Hub = new PM_Hub("testPlayer");
-	g_PM_Hub->SetUpClient(1, 0, 0, 1024, 768, 1);
+	g_PM_Hub->SetUpClient(clientID, 0, 0, RectWidth, RectHeight, 1);
 	switch (flag)
 	{
 	case 1:
 		queue1 = new CQueue(g_PM_Hub);
-		queue1->NewQueue(-1, 1, 1, 0, 1);
+		queue1->NewQueue(-1, 1, clientID, 0, 1);
 		queue1->AppendQueue(str, "cmp", 30, 0, 0, 1, 1);
-		queue1->SetCoords(512.0, 384.0, 1, 1024.0, 768.0, 1);
+		queue1->SetCoords(RectWidth / 2, RectHeight / 2, 1, RectWidth, RectHeight, 1);
 		queue1->SetStartTime(-1, 1);
 		g_PM_Hub->SendLoaded();
 		deleteData.transfer(queue1, g_PM_Hub);
+
 		break;
 	case 2:
 		queue2 = new CQueue(g_PM_Hub);
-		queue2->NewQueue(-1, 1, 1, 0, 1);
+		queue2->NewQueue(-1, 1, clientID, 0, 1);
 		queue2->AppendQueue(str, "cmp", 30, 0, 0, 1, 1);
-		queue2->SetCoords(512.0, 384.0, 1, 1024.0, 768.0, 1);
+		queue2->SetCoords(RectWidth / 2, RectHeight / 2, 1, RectWidth, RectHeight, 1);
 		queue2->SetStartTime(-1, 1);
 		g_PM_Hub->SendLoaded();
 		deleteData.transfer(queue2, g_PM_Hub);
@@ -387,7 +389,7 @@ void playMedia(string str, int flag)
 	default:
 		break;
 	}
-	
+
 }
 
 void seeYouPlayMedia()
@@ -432,11 +434,18 @@ void readData()
 		file["outThresholdReference"] >> outThresholdReference;
 		file["welcomeStr"] >> welcomeStr;
 		file["seeYouStr"] >> seeYouStr;
+		file["clientID"] >> clientID;
+		file["RectWidth"] >> RectWidth;
+		file["RectHeight"] >> RectHeight;
 		cout << "aspPersonNumThreshold:" << aspPersonNumThreshold << endl;;
 		cout << "kinectPersonNumThreshold:" << kinectPersonNumThreshold << endl;
-		cout << "inThresholdReference:" << inThresholdReference<<endl;
-		cout << "outThresholdReference:" << outThresholdReference<<endl;
+		cout << "inThresholdReference:" << inThresholdReference << endl;
+		cout << "outThresholdReference:" << outThresholdReference << endl;
 		cout << "welcomeStr:" << welcomeStr << endl;
 		cout << "seeYouStr:" << seeYouStr << endl;
+		cout << "clientID:" << clientID << endl;
+		cout << "RectWidth:" << RectWidth << endl;
+		cout << "RectHeight:" << RectHeight << endl;
+
 	}
 }
