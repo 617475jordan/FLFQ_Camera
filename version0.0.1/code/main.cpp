@@ -6,9 +6,11 @@
 #include "initial.h"
 #include "myKinect.h"
 #include "detectPedestrian.h"
-#include "ImageEnhancement.h"
 #include "PM_Hub.h"
 #include "deleteData.h"
+#include "remapImage.h"
+#include "CommonUtil.h"
+#include "ImageEnhancement.h"
 #ifdef _DEBUG
 #pragma comment(lib, "CommuDll30D.lib")
 #pragma comment(lib, "CommonUtil31D.lib")
@@ -33,53 +35,74 @@ int  initialDeviceflag;  //设备标志符
 int seeYouFlag;       //再见video标志位
 int playInitial;      //播放标记
 int personNum;              //当前出现在视频中的频率
-int aspPersonNumThreshold ;//出现帧数的阈值
-int kinectPersonNumThreshold ;
-int clientID, RectWidth, RectHeight;
-
-double inThresholdReference ; //在规定帧数内，出现的占比
+int aspPersonNumThreshold;//出现帧数的阈值
+int kinectPersonNumThreshold;
+int clientID,RectWidth,RectHeight;
+int firstVideoPosition, secondVideoPosition;
+int currentVideoPosition;
+int fps;
+int pauseFlag;
+int changePosition = 100;
+/// <summary>	在规定帧数内，出现的占比. </summary>
+double inThresholdReference;
 double outThresholdReference;//在规定帧数内，消失的占比
-Point randPoint[1][1024];      
+Point randPoint[1][1024];
 vector<Point> coordinate;
+
 bool leftButtonDownFlag; //左键单击后视频暂停播放的标志位  
 bool rightButtonDownFlag; //右键单击后视频暂停播放的标志位
 bool noBodyFlag, someBodyFlag;//室内是否有人标志位
 bool welcomeFlag;     //欢迎video的标志位
-
 CQueue *queue1, *queue2;
 PM_Hub * g_PM_Hub;
 
 string welcomeStr;      //欢迎video目录
 string seeYouStr;       //再见video目录
-
-
+string windowName = "show";
 
 void playMedia(string str, int flag); //播放视频
 void transferToPC();                  //将数据传输到另一台PC
 void seeYouPlayMedia();
 void readData();                      //读取保存在本地的数据
 void initial();                       //初始化
-int keyOperation();                  //键盘操作
+void keyOperation();                  //键盘操作
 void aspCapture();
 void deepkinectCapture();
+void colorkinectCapture();
 void onMouse(int event, int x, int y, int flags, void *ustc);//鼠标回调函数 
 Mat drawImage(Mat src, double someBody, double noBody, double inPerosonNumReference, double outPerosonNumReference);
-#define  windowName "show"
+/******************
+detectPedestrian这个算法在release下大概需要160ms
+*******************/
 
 int main()
 {
 	initial();
-	switch (initialDeviceflag)
+	playMedia(welcomeStr, 1);
+	VideoCapture capture;
+	capture.open(0);
+	Mat frame;
+	while (1)
 	{
-	case 1:
-		deepkinectCapture(); // 调用Kinect摄像头，使用深度图
-		break;
-	case 2:
-		aspCapture();//调用asp摄像头
-		break;
-	default:
-		break;
+		capture >> frame;
+		imshow("frame", frame);
+		waitKey(1);
+		keyOperation();
 	}
+	//switch (initialDeviceflag)
+	//{
+	//case 1:
+	//	deepkinectCapture(); // 调用Kinect摄像头，使用深度图
+	//	break;
+	//case 2:
+	//	colorkinectCapture();	
+	//	break;
+	//case 3:
+	//	aspCapture();//调用asp摄像头
+	//	break;
+	//default:
+	//	break;
+	//}
 }
 
 void initial()
@@ -89,28 +112,86 @@ void initial()
 	m_src.release();
 	initialDevice initialDevice;
 	initialDeviceflag = initialDevice.initialResult();
-	initialDeviceflag = 1;
+	initialDeviceflag = 3;
 	seeYouFlag = 0;
 	m_num = 0;
 	failNum = 0;
 	playInitial = 0;
 	welcomeFlag = false;
+	pauseFlag = 0;
 	coordinate.clear();
 }
 
 void deepkinectCapture()
 {
-		CBodyBasics myKinect;
-		rectModel rectModel;
-		rectView rectView;
+	CBodyBasics myKinect;
+	rectModel rectModel;
+	rectView rectView;
+	remapImage remapImage;
+	//传感器初始化
+	/// <summary>	The hr. </summary>
+	HRESULT hr = myKinect.deepInitializeDefaultSensor();
 
-		//传感器初始化
-		HRESULT hr = myKinect.deepInitializeDefaultSensor();
-		//initial();
+	while (FAILED(hr))
+	{
+		cout << "连接失败，正在尝试,当前失败次数为:" << failNum << endl;
+		hr = myKinect.deepInitializeDefaultSensor();
+		failNum++;
+	}
+	if (SUCCEEDED(hr))
+	{
+		namedWindow(windowName);
+		setMouseCallback(windowName, onMouse);
+		while (1)
+		{
+			
+			src = myKinect.deepUpdate();
+			if (src.empty())
+			{
+				src = myKinect.deepUpdate();
+			}
+
+			else
+			{
+				personNum++;
+				src = remapImage.Photo_Remap(src);
+				width = src.cols;
+				height = src.rows;
+				src = rectView.drawKinectImage(src, m_num, coordinate);
+				if (personNum == kinectPersonNumThreshold)
+				{
+					personNum = 0;
+					rectView.initial();
+				}
+				src = drawImage(src, rectView.someBodyNum(),
+					rectView.noBodyNum(), kinectPersonNumThreshold*inThresholdReference,
+					kinectPersonNumThreshold*outThresholdReference);
+				imshow(windowName, src);
+				waitKey(25);//刷新频率太快？50ms一般都是1ms
+
+				transferToPC();
+			}
+			
+			keyOperation();
+		}
+	}
+	else
+	{
+		cout << "kinect initialization failed!" << endl;
+	}
+
+}
+void colorkinectCapture()
+{
+		rectView rectView;
+		detectPedestrian detectPedestrian;
+		remapImage remapImage;
+		CBodyBasics myKinect;
+		HRESULT hr = myKinect.colorInitializeDefaultSensor();
 		while (FAILED(hr))
 		{
 			cout << "连接失败，正在尝试,当前失败次数为:" << failNum << endl;
-			hr = myKinect.deepInitializeDefaultSensor();
+			hr = myKinect.colorInitializeDefaultSensor();
 			failNum++;
 		}
 		if (SUCCEEDED(hr))
@@ -119,115 +200,114 @@ void deepkinectCapture()
 			setMouseCallback(windowName, onMouse);
 			while (1)
 			{
-				src = myKinect.deepUpdate();
-				if (src.empty())
+				m_src = myKinect.colorUpdate();
+				if (m_src.empty())
 				{
-					src = myKinect.deepUpdate();
+					m_src = myKinect.colorUpdate();
 				}
-
 				else
 				{
 					personNum++;
-					width = src.cols;
-					height = src.rows;
-
-					src = rectView.drawKinectImage(src, m_num, coordinate);
+					width = m_src.cols;
+					height = m_src.rows;
+					m_src = remapImage.Photo_Remap(m_src);
+					if (m_num >= 4)
+					{
+						src = rectView.drawAspImage(m_src, m_num, coordinate, true);
+					}
+					else
+					{
+						src = rectView.drawAspImage(m_src, m_num, coordinate, false);
+					}
+					src = detectPedestrian.Pedestrian(src, m_num);
 					if (personNum == kinectPersonNumThreshold)
 					{
 						personNum = 0;
-						rectView.initial();
+						detectPedestrian.initial();
 					}
+					
+					src = drawImage(src, detectPedestrian.someBodyNum(),
+						detectPedestrian.noBodyNum(), kinectPersonNumThreshold*inThresholdReference, 
+						kinectPersonNumThreshold*outThresholdReference);
 
-					src = drawImage(src, rectView.someBodyNum(),
-						rectView.noBodyNum(), kinectPersonNumThreshold*inThresholdReference, kinectPersonNumThreshold*outThresholdReference);
 					imshow(windowName, src);
-					waitKey(50);
+					waitKey(1);
 
 					transferToPC();
 				}
-				if (keyOperation() == 1)
-				{
-					myKinect.clear();
-					destroyAllWindows();
-					src.release();
-					m_src.release();
-					exit(-1);
-				}
-				
+				keyOperation();
 			}
 		}
-		else
-		{
-			cout << "kinect initialization failed!" << endl;
-		}
-	
 }
-
 void aspCapture()
 {
-		CDsCapture dsCapture;
-		rectModel rectModel;
-		rectView rectView;
-		detectPedestrian detectPedestrian;
-		imageEnhancement imageEnhancement;
-		dsCapture.Initialize(0);
-		namedWindow(windowName);
-		setMouseCallback(windowName, onMouse);
+	CDsCapture dsCapture;
+	rectModel rectModel;
+	rectView rectView;
+	detectPedestrian detectPedestrian;
+	imageEnhancement imageEnhancement;
+	dsCapture.Initialize(0);
+	namedWindow(windowName);
+	setMouseCallback(windowName, onMouse);
 
-		while (1)
+	while (1)
+	{
+		double t = clock();
+		pImage = dsCapture.GetImage();
+		if (pImage)
 		{
-			pImage = dsCapture.GetImage();
-			if (pImage)
+			personNum++;
+			src = pImage;
+			width = src.cols;
+			height = src.rows;
+			flip(src, src, -1);
+			cvtColor(src, m_src, CV_GRAY2RGB);
+			//拉普拉斯算子图像增强效果
+			//Mat kernel = (Mat_<float>(3, 3) << 0, -1, 0, 0, 5, 0, 0, -1, 0);
+			//filter2D(m_src, m_src, CV_8UC3, kernel);
+			m_src = imageEnhancement.SimplestCB(m_src, 1);
+			if (m_num >= 4)
 			{
-				personNum++;
-				src = pImage;
-				width = src.cols;
-				height = src.rows;
-				flip(src, src, -1);
-				cvtColor(src, m_src, CV_GRAY2RGB);
-				//拉普拉斯算子图像增强效果
-				//Mat kernel = (Mat_<float>(3, 3) << 0, -1, 0, 0, 5, 0, 0, -1, 0);
-				//filter2D(m_src, m_src, CV_8UC3, kernel);
-				m_src = imageEnhancement.SimplestCB(m_src, 1);
-				if (m_num >= 4)
-				{
-					src = rectView.drawAspImage(m_src, m_num, coordinate,true);
-				}
-				else
-				{
-					src = rectView.drawAspImage(m_src, m_num, coordinate, false);
-				}
-		    	src=detectPedestrian.Pedestrian(src,m_num);
-				if (personNum == aspPersonNumThreshold)
-				{
-					personNum = 0;
-					detectPedestrian.initial();
-				}
-
+				src = rectView.drawAspImage(m_src, m_num, coordinate, true);
+			}
+			else
+			{
+				src = rectView.drawAspImage(m_src, m_num, coordinate, false);
+			}
+			
+			src = detectPedestrian.Pedestrian(src, m_num);
+			if (personNum == aspPersonNumThreshold)
+			{
+				personNum = 0;
+				detectPedestrian.initial();
+			}
+			if (seeYouFlag == 0)
+			{
 				src = drawImage(src, detectPedestrian.someBodyNum(),
-					detectPedestrian.noBodyNum(), aspPersonNumThreshold*inThresholdReference, aspPersonNumThreshold*outThresholdReference);
-				imshow(windowName, src);
-				waitKey(1);
-				
-				transferToPC();
+					detectPedestrian.noBodyNum(), aspPersonNumThreshold*inThresholdReference,
+					aspPersonNumThreshold*outThresholdReference);
 			}
-			if (keyOperation() == 1)
+			else
 			{
-				cvReleaseImage(&pImage);
-				destroyAllWindows();
-				exit(-1);
+				src = rectView.help(src, 4);
 			}
+			imshow(windowName, src);
+			waitKey(1);
+
+			transferToPC();
 		}
+		keyOperation();
+	}
 }
 void transferToPC()
 {
 	if (playInitial == 1)
 	{
-		playMedia(welcomeStr,1);
+		playMedia(welcomeStr, 1);
 		playInitial++;
 		welcomeFlag = true;
 	}
-	if (someBodyFlag == true && playInitial >= 1 && welcomeFlag==true)
+	if (someBodyFlag == true && playInitial >= 1 && welcomeFlag == true)
 	{
 		int id = queue1->GetQueueID();
 		bool b = g_PM_Hub->GetItemEndFeedback(id, welcomeStr);
@@ -257,7 +337,7 @@ void transferToPC()
 		playMedia(seeYouStr, 2);
 	}
 	if (seeYouFlag >= 1)
-	{	
+	{
 		seeYouPlayMedia();
 	}
 }
@@ -278,7 +358,7 @@ Mat drawImage(Mat src, double someBody, double noBody, double inPerosonNumRefere
 		else if (noBody >= outPerosonNumReference/*&&seeYouFlag == true*/)
 		{
 			noBodyFlag = true;
-			someBodyFlag = false;	
+			someBodyFlag = false;
 			src = rectView.help(src, 3);
 			detectPedestrian.initial();
 		}
@@ -335,7 +415,7 @@ void onMouse(int event, int x, int y, int flags, void *ustc)
 	}
 }
 
-int keyOperation()
+void keyOperation()
 {
 	char charkey;
 	charkey = waitKey(10);
@@ -347,8 +427,7 @@ int keyOperation()
 		deleteData.DeletePM();
 		deleteData.DeleteQueue();
 		g_PM_Hub = deleteData.pm_Hub();
-		return 1;
-		/***********释放内存可能存在bug*******/
+		exit(-1);
 	}
 	if (charkey == 'C' || charkey == 'c')
 	{
@@ -356,13 +435,62 @@ int keyOperation()
 		MessageBoxA(NULL, sz.c_str(), "初始化数据", IDOK);
 		initial();
 	}
-	return 0;
+	if (charkey == 'a' || charkey == 'A')
+	{
+		currentVideoPosition = clock();
+		cout << "firstVideoPosition 1:" << secondVideoPosition << endl;
+		currentVideoPosition = currentVideoPosition - firstVideoPosition;
+		secondVideoPosition = currentVideoPosition + secondVideoPosition + changePosition;
+		queue1->MediaSeek(secondVideoPosition, 0, 1);
+		//queue1->SetStartTime(firstVideoPosition, 1);
+		g_PM_Hub->SendLoaded();
+		if (seeYouFlag != 0)
+		{
+			secondVideoPosition = 0;
+		}
+		firstVideoPosition = currentVideoPosition;
+		cout << "firstVideoPosition 2:" << secondVideoPosition << endl;
+	}
+	if (charkey == 'd' || charkey == 'D')
+	{
+		currentVideoPosition = clock();
+		currentVideoPosition = currentVideoPosition - firstVideoPosition;
+		secondVideoPosition = currentVideoPosition + secondVideoPosition - changePosition;
+		queue1->MediaSeek(secondVideoPosition/30, 0, 1);
+		g_PM_Hub->SendLoaded();
+		if (secondVideoPosition < 0)
+		{
+			secondVideoPosition = 0;
+		}
+		firstVideoPosition = currentVideoPosition;
+	}
+	//if (charkey == 'p' || charkey == 'P')
+	//{
+	//	pauseFlag++;
+	//	int pausePosition;
+	//	bool pauseFlag = false;
+	//	if (pauseFlag == 1 && pauseFlag == false)
+	//	{
+	//		pausePosition = clock() - firstVideoPosition;
+	//		pausePosition = pausePosition + secondVideoPosition;
+	//		pauseFlag == true;
+	//		queue1->MediaSeek(secondVideoPosition / 30, 1, 1);
+	//		g_PM_Hub->SendLoaded();
+	//		cout << "tmp" << endl;
+	//	}
+	//	else
+	//	{
+	//		pauseFlag = false;
+	//		pauseFlag = 0;
+	//	}
+	//}
 }
 
 
 void playMedia(string str, int flag)
 {
 	deleteData deleteData;
+	CommonUse::SetCurrentDir();
 	g_PM_Hub = new PM_Hub("testPlayer");
 	g_PM_Hub->SetUpClient(clientID, 0, 0, RectWidth, RectHeight, 1);
 	switch (flag)
@@ -371,16 +499,19 @@ void playMedia(string str, int flag)
 		queue1 = new CQueue(g_PM_Hub);
 		queue1->NewQueue(-1, 1, clientID, 0, 1);
 		queue1->AppendQueue(str, "cmp", 30, 0, 0, 1, 1);
-		queue1->SetCoords(RectWidth / 2, RectHeight / 2, 1, RectWidth, RectHeight, 1);
+		queue1->SetCoords(RectWidth/2, RectHeight / 2, 1, RectWidth, RectHeight, 1);
 		queue1->SetStartTime(-1, 1);
 		g_PM_Hub->SendLoaded();
-		deleteData.transfer(queue1, g_PM_Hub);
-
+		currentVideoPosition = clock();
+		//deleteData.transfer(queue1, g_PM_Hub);	
+		firstVideoPosition = clock();
+		secondVideoPosition = 0;
 		break;
+
 	case 2:
 		queue2 = new CQueue(g_PM_Hub);
 		queue2->NewQueue(-1, 1, clientID, 0, 1);
-		queue2->AppendQueue(str, "cmp", 30, 0, 0, 1, 1);
+		queue2->AppendQueue(str, "cmp", fps, 0, 0, 1, 1);
 		queue2->SetCoords(RectWidth / 2, RectHeight / 2, 1, RectWidth, RectHeight, 1);
 		queue2->SetStartTime(-1, 1);
 		g_PM_Hub->SendLoaded();
@@ -437,6 +568,7 @@ void readData()
 		file["clientID"] >> clientID;
 		file["RectWidth"] >> RectWidth;
 		file["RectHeight"] >> RectHeight;
+		file["fps"] >> fps;
 		cout << "aspPersonNumThreshold:" << aspPersonNumThreshold << endl;;
 		cout << "kinectPersonNumThreshold:" << kinectPersonNumThreshold << endl;
 		cout << "inThresholdReference:" << inThresholdReference << endl;
@@ -446,6 +578,7 @@ void readData()
 		cout << "clientID:" << clientID << endl;
 		cout << "RectWidth:" << RectWidth << endl;
 		cout << "RectHeight:" << RectHeight << endl;
-
+		cout << "A:Accelerate，D：Decelerate" << endl;
+		cout << "fps:" << fps << endl;
 	}
 }
